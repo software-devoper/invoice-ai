@@ -1,0 +1,8 @@
+.env
+uploads/*
+!uploads/.gitkeep
+!uploads/invoices/
+!uploads/invoices/.gitkeep
+!uploads/logos/
+!uploads/logos/.gitkeep
+
