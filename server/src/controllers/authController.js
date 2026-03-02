@@ -57,6 +57,8 @@ const withTimeout = (promise, ms, timeoutMessage) => {
 
 const queueVerificationEmail = async ({ to, username, token }) => {
   const hardTimeoutMs = Number(process.env.EMAIL_SEND_TIMEOUT_MS || 30000);
+  // eslint-disable-next-line no-console
+  console.info(`Verification email queued for ${to}`);
 
   try {
     await withTimeout(
@@ -68,6 +70,8 @@ const queueVerificationEmail = async ({ to, username, token }) => {
       hardTimeoutMs,
       "Email send timeout"
     );
+    // eslint-disable-next-line no-console
+    console.info(`Verification email sent to ${to}`);
     return "sent";
   } catch (error) {
     // eslint-disable-next-line no-console
