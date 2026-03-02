@@ -78,9 +78,24 @@ app.get("/", (_req, res) => {
 });
 
 app.get("/health", (_req, res) => {
+  const explicitProvider = String(process.env.EMAIL_PROVIDER || "")
+    .trim()
+    .toLowerCase();
+  const resendKeyPresent = Boolean(String(process.env.RESEND_API_KEY || "").trim());
+  const emailProvider =
+    explicitProvider === "resend" || explicitProvider === "smtp"
+      ? explicitProvider
+      : String(process.env.NODE_ENV || "").toLowerCase() === "production"
+      ? "resend"
+      : resendKeyPresent
+      ? "resend"
+      : "smtp";
+
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
+    emailProvider,
+    resendKeyPresent,
   });
 });
 
