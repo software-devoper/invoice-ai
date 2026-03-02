@@ -14,7 +14,9 @@ const AuthPage = () => {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [resendEmail, setResendEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -31,6 +33,7 @@ const AuthPage = () => {
       if (mode === "register") {
         const data = await authService.register({ username, email, password });
         setMessage(data.message || "Registered. Check your email for verification link.");
+        setResendEmail(email);
         setMode("login");
       } else {
         const data = await authService.login({ username, password });
@@ -42,6 +45,27 @@ const AuthPage = () => {
       setError((err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onResendVerification = async () => {
+    if (!resendEmail) {
+      setError("Please enter your email to resend verification.");
+      return;
+    }
+    setResendLoading(true);
+    setError("");
+    setMessage("");
+    try {
+      const data = await authService.resendVerification(resendEmail);
+      setMessage(data.message || "Verification email request accepted.");
+    } catch (err: unknown) {
+      setError(
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+          "Failed to resend verification email."
+      );
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -138,6 +162,27 @@ const AuthPage = () => {
               {mode === "register" ? "Create Account" : "Login"}
             </LoadingButton>
           </form>
+
+          <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50 p-3 dark:border-slate-600 dark:bg-slate-800">
+            <p className="text-xs font-semibold text-brand-800 dark:text-slate-100">Didn&apos;t get verification email?</p>
+            <div className="mt-2 flex flex-col gap-2 md:flex-row">
+              <input
+                type="email"
+                placeholder="Enter your registered email"
+                className="w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none ring-brand-200 transition focus:ring dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:ring-slate-500"
+                value={resendEmail}
+                onChange={(e) => setResendEmail(e.target.value)}
+              />
+              <LoadingButton
+                type="button"
+                variant="secondary"
+                isLoading={resendLoading}
+                onClick={onResendVerification}
+              >
+                Resend
+              </LoadingButton>
+            </div>
+          </div>
         </GlassCard>
       </div>
     </div>
