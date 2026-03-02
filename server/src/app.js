@@ -14,10 +14,38 @@ const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
 
+const parseAllowedOrigins = () =>
+  String(process.env.CLIENT_URL || "http://localhost:5173")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+const isAllowedOrigin = (origin, allowedOrigins) => {
+  if (!origin) return true; // curl/postman/server-to-server
+  if (allowedOrigins.includes(origin)) return true;
+
+  // Optional helper for Vercel preview deployments
+  if (
+    String(process.env.ALLOW_VERCEL_PREVIEWS || "false") === "true" &&
+    /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: (origin, callback) => {
+      const allowedOrigins = parseAllowedOrigins();
+      if (isAllowedOrigin(origin, allowedOrigins)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("CORS origin not allowed"));
+    },
     credentials: true,
   })
 );
@@ -38,6 +66,13 @@ app.use(
 
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
+app.get("/", (_req, res) => {
+  res.status(200).json({
+    service: "invoice-automation-api",
+    status: "ok",
+  });
+});
+
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
@@ -54,4 +89,3 @@ app.use(notFound);
 app.use(errorHandler);
 
 module.exports = app;
-
