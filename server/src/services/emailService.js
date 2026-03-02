@@ -14,6 +14,10 @@ const getConfiguredProvider = () => {
   if (explicitProvider === "resend") return "resend";
   if (explicitProvider === "smtp") return "smtp";
 
+  if (String(process.env.NODE_ENV || "").toLowerCase() === "production") {
+    return "resend";
+  }
+
   return getResendApiKey().length > 0 ? "resend" : "smtp";
 };
 
