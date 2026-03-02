@@ -5,6 +5,7 @@ import GlassCard from "../components/GlassCard";
 import LoadingButton from "../components/LoadingButton";
 import ThemeToggle from "../components/ThemeToggle";
 import { authService } from "../services/authService";
+import { api } from "../services/api";
 import { useAuth } from "../hooks/useAuth";
 
 type Mode = "login" | "register";
@@ -57,7 +58,7 @@ const AuthPage = () => {
     setError("");
     setMessage("");
     try {
-      const data = await authService.resendVerification(resendEmail);
+      const { data } = await api.post("/auth/resend-verification", { email: resendEmail });
       setMessage(data.message || "Verification email request accepted.");
     } catch (err: unknown) {
       setError(
@@ -163,26 +164,28 @@ const AuthPage = () => {
             </LoadingButton>
           </form>
 
-          <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50 p-3 dark:border-slate-600 dark:bg-slate-800">
-            <p className="text-xs font-semibold text-brand-800 dark:text-slate-100">Didn&apos;t get verification email?</p>
-            <div className="mt-2 flex flex-col gap-2 md:flex-row">
-              <input
-                type="email"
-                placeholder="Enter your registered email"
-                className="w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none ring-brand-200 transition focus:ring dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:ring-slate-500"
-                value={resendEmail}
-                onChange={(e) => setResendEmail(e.target.value)}
-              />
-              <LoadingButton
-                type="button"
-                variant="secondary"
-                isLoading={resendLoading}
-                onClick={onResendVerification}
-              >
-                Resend
-              </LoadingButton>
+          {mode === "login" && (
+            <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50 p-3 dark:border-slate-600 dark:bg-slate-800">
+              <p className="text-xs font-semibold text-brand-800 dark:text-slate-100">Didn&apos;t get verification email?</p>
+              <div className="mt-2 flex flex-col gap-2 md:flex-row">
+                <input
+                  type="email"
+                  placeholder="Enter your registered email"
+                  className="w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none ring-brand-200 transition focus:ring dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:ring-slate-500"
+                  value={resendEmail}
+                  onChange={(e) => setResendEmail(e.target.value)}
+                />
+                <LoadingButton
+                  type="button"
+                  variant="secondary"
+                  isLoading={resendLoading}
+                  onClick={onResendVerification}
+                >
+                  Resend
+                </LoadingButton>
+              </div>
             </div>
-          </div>
+          )}
         </GlassCard>
       </div>
     </div>
