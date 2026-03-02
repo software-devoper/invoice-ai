@@ -4,7 +4,24 @@ const { invoiceEmailTemplate, verificationEmailTemplate } = require("../utils/em
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const useResend = () => Boolean(process.env.RESEND_API_KEY);
+const getResendApiKey = () => String(process.env.RESEND_API_KEY || "").trim();
+
+const getConfiguredProvider = () => {
+  const explicitProvider = String(process.env.EMAIL_PROVIDER || "")
+    .trim()
+    .toLowerCase();
+
+  if (explicitProvider === "resend") return "resend";
+  if (explicitProvider === "smtp") return "smtp";
+
+  return getResendApiKey().length > 0 ? "resend" : "smtp";
+};
+
+const assertProviderConfig = (provider) => {
+  if (provider === "resend" && getResendApiKey().length === 0) {
+    throw new Error("EMAIL_PROVIDER is 'resend' but RESEND_API_KEY is missing.");
+  }
+};
 
 const toArray = (value) => (Array.isArray(value) ? value : [value].filter(Boolean));
 
@@ -58,7 +75,7 @@ const sendWithResend = async (mailOptions) => {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      Authorization: `Bearer ${getResendApiKey()}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
@@ -73,11 +90,16 @@ const sendWithResend = async (mailOptions) => {
 };
 
 const sendMailWithRetry = async (mailOptions, retries = 3) => {
+  const provider = getConfiguredProvider();
+  assertProviderConfig(provider);
+  // eslint-disable-next-line no-console
+  console.info(`Email provider selected: ${provider}`);
+
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
       let info;
-      if (useResend()) {
+      if (provider === "resend") {
         info = await sendWithResend(mailOptions);
       } else {
         const transporter = await getMailerTransporter();
@@ -86,12 +108,14 @@ const sendMailWithRetry = async (mailOptions, retries = 3) => {
       return info;
     } catch (error) {
       lastError = error;
+      // eslint-disable-next-line no-console
+      console.warn(`Email send attempt ${attempt}/${retries} failed via ${provider}: ${error.message}`);
       if (attempt < retries) {
         await sleep(500 * attempt);
       }
     }
   }
-  throw lastError;
+  throw new Error(`[${provider}] ${lastError?.message || "Unknown email error"}`);
 };
 
 const sendVerificationEmail = async ({ to, username, token }) => {
