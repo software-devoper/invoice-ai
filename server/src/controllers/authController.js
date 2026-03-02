@@ -44,32 +44,16 @@ const createVerificationToken = async (userId) => {
   return token;
 };
 
-const withTimeout = (promise, ms, timeoutMessage) => {
-  let timer = null;
-  const timeoutPromise = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(timeoutMessage)), ms);
-  });
-
-  return Promise.race([promise, timeoutPromise]).finally(() => {
-    if (timer) clearTimeout(timer);
-  });
-};
-
 const queueVerificationEmail = async ({ to, username, token }) => {
-  const hardTimeoutMs = Number(process.env.EMAIL_SEND_TIMEOUT_MS || 30000);
   // eslint-disable-next-line no-console
   console.info(`Verification email queued for ${to}`);
 
   try {
-    await withTimeout(
-      sendVerificationEmail({
-        to,
-        username,
-        token,
-      }),
-      hardTimeoutMs,
-      "Email send timeout"
-    );
+    await sendVerificationEmail({
+      to,
+      username,
+      token,
+    });
     // eslint-disable-next-line no-console
     console.info(`Verification email sent to ${to}`);
     return "sent";
