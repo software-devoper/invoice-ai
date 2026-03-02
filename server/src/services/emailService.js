@@ -11,6 +11,19 @@ const normalizeFrom = (value, fallback = "") => {
     .replace(/^['"]|['"]$/g, "");
   return normalized || fallback;
 };
+const isValidFromField = (value) => {
+  const plainEmailPattern = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+  const namedEmailPattern = /^.+<\s*[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+\s*>$/;
+  return plainEmailPattern.test(value) || namedEmailPattern.test(value);
+};
+const getSafeFrom = (value) => {
+  const fallback = "onboarding@resend.dev";
+  const normalized = normalizeFrom(value, fallback);
+  if (isValidFromField(normalized)) return normalized;
+  // eslint-disable-next-line no-console
+  console.warn(`Invalid from field "${normalized}", falling back to ${fallback}`);
+  return fallback;
+};
 
 const getConfiguredProvider = () => {
   const explicitProvider = String(process.env.EMAIL_PROVIDER || "")
@@ -69,10 +82,7 @@ const buildResendAttachments = (attachments = []) =>
 
 const sendWithResend = async (mailOptions) => {
   const payload = {
-    from: normalizeFrom(
-      mailOptions.from || process.env.RESEND_FROM || process.env.SMTP_FROM,
-      "onboarding@resend.dev"
-    ),
+    from: getSafeFrom(mailOptions.from || process.env.RESEND_FROM || process.env.SMTP_FROM),
     to: toArray(mailOptions.to),
     subject: mailOptions.subject,
     html: mailOptions.html,
@@ -134,7 +144,7 @@ const sendMailWithRetry = async (mailOptions, retries = 3) => {
 const sendVerificationEmail = async ({ to, username, token }) => {
   const verificationLink = `${process.env.CLIENT_URL}/verify-email?token=${token}`;
   return sendMailWithRetry({
-    from: normalizeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM, "onboarding@resend.dev"),
+    from: getSafeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM),
     to,
     subject: "Verify your Invoice SaaS account",
     html: verificationEmailTemplate({ username, verificationLink }),
@@ -144,7 +154,7 @@ const sendVerificationEmail = async ({ to, username, token }) => {
 const sendInvoiceEmail = async ({ to, customerName, companyName, invoiceNumber, pdfFilePath }) =>
   sendMailWithRetry(
     {
-      from: normalizeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM, "onboarding@resend.dev"),
+      from: getSafeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM),
       to,
       subject: `Invoice ${invoiceNumber}`,
       html: invoiceEmailTemplate({ customerName, companyName, invoiceNumber }),
