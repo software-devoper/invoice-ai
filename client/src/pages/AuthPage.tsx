@@ -42,8 +42,10 @@ const AuthPage = () => {
         navigate("/upload");
       }
     } catch (err: unknown) {
-      const fallback = "Authentication request failed.";
-      setError((err as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback);
+      const typed = err as { response?: { data?: { message?: string } }; message?: string };
+      const fallback =
+        "Cannot reach server. Check backend deployment, CORS CLIENT_URL, and VITE_API_URL.";
+      setError(typed?.response?.data?.message || typed?.message || fallback);
     } finally {
       setLoading(false);
     }
