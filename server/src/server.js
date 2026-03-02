@@ -10,10 +10,13 @@ const startServer = async () => {
   await connectDB();
   app.listen(PORT, () => {
     const emailProvider = String(process.env.EMAIL_PROVIDER || (process.env.RESEND_API_KEY ? "resend" : "smtp"));
+    const resendKeyPresent = Boolean(String(process.env.RESEND_API_KEY || "").trim());
     // eslint-disable-next-line no-console
     console.log(`Server running on port ${PORT}`);
     // eslint-disable-next-line no-console
     console.log(`Email provider mode: ${emailProvider}`);
+    // eslint-disable-next-line no-console
+    console.log(`Resend key present: ${resendKeyPresent}`);
   });
 };
 
