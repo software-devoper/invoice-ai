@@ -56,7 +56,7 @@ const withTimeout = (promise, ms, timeoutMessage) => {
 };
 
 const queueVerificationEmail = async ({ to, username, token }) => {
-  const hardTimeoutMs = Number(process.env.EMAIL_SEND_TIMEOUT_MS || 10000);
+  const hardTimeoutMs = Number(process.env.EMAIL_SEND_TIMEOUT_MS || 30000);
 
   try {
     await withTimeout(
