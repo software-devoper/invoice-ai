@@ -5,6 +5,12 @@ const { invoiceEmailTemplate, verificationEmailTemplate } = require("../utils/em
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getResendApiKey = () => String(process.env.RESEND_API_KEY || "").trim();
+const normalizeFrom = (value, fallback = "") => {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "");
+  return normalized || fallback;
+};
 
 const getConfiguredProvider = () => {
   const explicitProvider = String(process.env.EMAIL_PROVIDER || "")
@@ -63,7 +69,10 @@ const buildResendAttachments = (attachments = []) =>
 
 const sendWithResend = async (mailOptions) => {
   const payload = {
-    from: mailOptions.from || process.env.RESEND_FROM || process.env.SMTP_FROM,
+    from: normalizeFrom(
+      mailOptions.from || process.env.RESEND_FROM || process.env.SMTP_FROM,
+      "onboarding@resend.dev"
+    ),
     to: toArray(mailOptions.to),
     subject: mailOptions.subject,
     html: mailOptions.html,
@@ -125,7 +134,7 @@ const sendMailWithRetry = async (mailOptions, retries = 3) => {
 const sendVerificationEmail = async ({ to, username, token }) => {
   const verificationLink = `${process.env.CLIENT_URL}/verify-email?token=${token}`;
   return sendMailWithRetry({
-    from: process.env.RESEND_FROM || process.env.SMTP_FROM,
+    from: normalizeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM, "onboarding@resend.dev"),
     to,
     subject: "Verify your Invoice SaaS account",
     html: verificationEmailTemplate({ username, verificationLink }),
@@ -135,7 +144,7 @@ const sendVerificationEmail = async ({ to, username, token }) => {
 const sendInvoiceEmail = async ({ to, customerName, companyName, invoiceNumber, pdfFilePath }) =>
   sendMailWithRetry(
     {
-      from: process.env.RESEND_FROM || process.env.SMTP_FROM,
+      from: normalizeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM, "onboarding@resend.dev"),
       to,
       subject: `Invoice ${invoiceNumber}`,
       html: invoiceEmailTemplate({ customerName, companyName, invoiceNumber }),
