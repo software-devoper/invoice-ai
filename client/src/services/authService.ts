@@ -17,6 +17,11 @@ export const authService = {
     return data;
   },
 
+  resendVerification: async (email: string) => {
+    const { data } = await api.post("/auth/resend-verification", { email });
+    return data;
+  },
+
   login: async (payload: { username: string; password: string }) => {
     const { data } = await api.post<LoginResponse>("/auth/login", payload);
     return data;
@@ -27,4 +32,3 @@ export const authService = {
     return data.user;
   },
 };
-
