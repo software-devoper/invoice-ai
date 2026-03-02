@@ -14,20 +14,23 @@ const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
 
+const normalizeOrigin = (value) => String(value || "").trim().replace(/\/+$/, "");
+
 const parseAllowedOrigins = () =>
   String(process.env.CLIENT_URL || "http://localhost:5173")
     .split(",")
-    .map((value) => value.trim())
+    .map((value) => normalizeOrigin(value))
     .filter(Boolean);
 
 const isAllowedOrigin = (origin, allowedOrigins) => {
-  if (!origin) return true; // curl/postman/server-to-server
-  if (allowedOrigins.includes(origin)) return true;
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (!normalizedOrigin) return true; // curl/postman/server-to-server
+  if (allowedOrigins.includes(normalizedOrigin)) return true;
 
   // Optional helper for Vercel preview deployments
   if (
     String(process.env.ALLOW_VERCEL_PREVIEWS || "false") === "true" &&
-    /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)
+    /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(normalizedOrigin)
   ) {
     return true;
   }
