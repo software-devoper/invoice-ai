@@ -33,6 +33,49 @@ const validateRegistrationFields = ({ username, email, password }) => {
   }
 };
 
+const createVerificationToken = async (userId) => {
+  await VerificationToken.deleteMany({ userId });
+  const token = crypto.randomBytes(32).toString("hex");
+  await VerificationToken.create({
+    userId,
+    token,
+    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+  });
+  return token;
+};
+
+const withTimeout = (promise, ms, timeoutMessage) => {
+  let timer = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(timeoutMessage)), ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+};
+
+const queueVerificationEmail = async ({ to, username, token }) => {
+  const hardTimeoutMs = Number(process.env.EMAIL_SEND_TIMEOUT_MS || 10000);
+
+  try {
+    await withTimeout(
+      sendVerificationEmail({
+        to,
+        username,
+        token,
+      }),
+      hardTimeoutMs,
+      "Email send timeout"
+    );
+    return "sent";
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(`Verification email failed for ${to}: ${error.message}`);
+    return "queued";
+  }
+};
+
 const register = asyncHandler(async (req, res) => {
   const { username, email, password } = req.body;
   validateRegistrationFields({ username, email, password });
@@ -55,14 +98,8 @@ const register = asyncHandler(async (req, res) => {
     verified: false,
   });
 
-  const token = crypto.randomBytes(32).toString("hex");
-  await VerificationToken.create({
-    userId: user._id,
-    token,
-    expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
-  });
-
-  await sendVerificationEmail({
+  const token = await createVerificationToken(user._id);
+  queueVerificationEmail({
     to: user.email,
     username: user.username,
     token,
@@ -70,6 +107,7 @@ const register = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     message: "Registration successful. Please verify your email before logging in.",
+    deliveryStatus: "queued",
   });
 });
 
@@ -126,6 +164,45 @@ const login = asyncHandler(async (req, res) => {
   });
 });
 
+const resendVerification = asyncHandler(async (req, res) => {
+  const normalizedEmail = String(req.body.email || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedEmail) {
+    throw new AppError("Email is required.", 400);
+  }
+
+  const user = await User.findOne({ email: normalizedEmail });
+  if (!user) {
+    res.json({
+      message: "If this account exists and is unverified, a verification email has been sent.",
+      deliveryStatus: "queued",
+    });
+    return;
+  }
+
+  if (user.verified) {
+    res.json({
+      message: "Account is already verified. Please log in.",
+      deliveryStatus: "already_verified",
+    });
+    return;
+  }
+
+  const token = await createVerificationToken(user._id);
+  queueVerificationEmail({
+    to: user.email,
+    username: user.username,
+    token,
+  });
+
+  res.json({
+    message: "Verification email request accepted. Please check your inbox.",
+    deliveryStatus: "queued",
+  });
+});
+
 const getMe = asyncHandler(async (req, res) => {
   res.json({ user: req.user });
 });
@@ -134,6 +211,6 @@ module.exports = {
   register,
   verifyEmail,
   login,
+  resendVerification,
   getMe,
 };
-
