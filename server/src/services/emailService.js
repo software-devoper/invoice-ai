@@ -1,14 +1,88 @@
+const fs = require("fs");
 const { getMailerTransporter } = require("../config/mailer");
 const { invoiceEmailTemplate, verificationEmailTemplate } = require("../utils/emailTemplate");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const useResend = () => Boolean(process.env.RESEND_API_KEY);
+
+const toArray = (value) => (Array.isArray(value) ? value : [value].filter(Boolean));
+
+const buildResendAttachments = (attachments = []) =>
+  attachments
+    .map((attachment) => {
+      if (!attachment) return null;
+
+      if (attachment.content && attachment.filename) {
+        return {
+          filename: attachment.filename,
+          content: attachment.content,
+        };
+      }
+
+      if (attachment.path && attachment.filename) {
+        if (/^https?:\/\//i.test(attachment.path)) {
+          return {
+            filename: attachment.filename,
+            path: attachment.path,
+          };
+        }
+
+        if (fs.existsSync(attachment.path)) {
+          return {
+            filename: attachment.filename,
+            content: fs.readFileSync(attachment.path).toString("base64"),
+          };
+        }
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+
+const sendWithResend = async (mailOptions) => {
+  const payload = {
+    from: mailOptions.from || process.env.RESEND_FROM || process.env.SMTP_FROM,
+    to: toArray(mailOptions.to),
+    subject: mailOptions.subject,
+    html: mailOptions.html,
+    text: mailOptions.text,
+    reply_to: mailOptions.replyTo,
+  };
+
+  const attachments = buildResendAttachments(mailOptions.attachments);
+  if (attachments.length > 0) {
+    payload.attachments = attachments;
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Resend API error ${response.status}: ${errorBody}`);
+  }
+
+  return response.json();
+};
+
 const sendMailWithRetry = async (mailOptions, retries = 3) => {
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
-      const transporter = await getMailerTransporter();
-      const info = await transporter.sendMail(mailOptions);
+      let info;
+      if (useResend()) {
+        info = await sendWithResend(mailOptions);
+      } else {
+        const transporter = await getMailerTransporter();
+        info = await transporter.sendMail(mailOptions);
+      }
       return info;
     } catch (error) {
       lastError = error;
@@ -23,7 +97,7 @@ const sendMailWithRetry = async (mailOptions, retries = 3) => {
 const sendVerificationEmail = async ({ to, username, token }) => {
   const verificationLink = `${process.env.CLIENT_URL}/verify-email?token=${token}`;
   return sendMailWithRetry({
-    from: process.env.SMTP_FROM,
+    from: process.env.RESEND_FROM || process.env.SMTP_FROM,
     to,
     subject: "Verify your Invoice SaaS account",
     html: verificationEmailTemplate({ username, verificationLink }),
@@ -33,7 +107,7 @@ const sendVerificationEmail = async ({ to, username, token }) => {
 const sendInvoiceEmail = async ({ to, customerName, companyName, invoiceNumber, pdfFilePath }) =>
   sendMailWithRetry(
     {
-      from: process.env.SMTP_FROM,
+      from: process.env.RESEND_FROM || process.env.SMTP_FROM,
       to,
       subject: `Invoice ${invoiceNumber}`,
       html: invoiceEmailTemplate({ customerName, companyName, invoiceNumber }),
@@ -52,4 +126,3 @@ module.exports = {
   sendVerificationEmail,
   sendInvoiceEmail,
 };
-
