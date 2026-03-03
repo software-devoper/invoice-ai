@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import GlassCard from "../components/GlassCard";
 import LoadingButton from "../components/LoadingButton";
 import ThemeToggle from "../components/ThemeToggle";
@@ -23,6 +23,24 @@ const AuthPage = () => {
 
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const verified = searchParams.get("verified");
+    if (!verified) return;
+
+    const statusMessage = searchParams.get("message");
+    if (verified === "success") {
+      setMessage(statusMessage || "Email verified successfully. You can now log in.");
+      setError("");
+    } else {
+      setError(statusMessage || "Verification failed.");
+      setMessage("");
+    }
+
+    setMode("login");
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
