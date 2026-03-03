@@ -11,6 +11,20 @@ const normalizeFrom = (value, fallback = "") => {
     .replace(/^['"]|['"]$/g, "");
   return normalized || fallback;
 };
+const normalizeBaseUrl = (value, fallback = "") =>
+  String(value || "")
+    .trim()
+    .replace(/\/+$/, "") || fallback;
+const buildVerificationLink = (token) => {
+  const encodedToken = encodeURIComponent(token);
+  const appBaseUrl = normalizeBaseUrl(process.env.APP_URL);
+  if (appBaseUrl) {
+    return `${appBaseUrl}/api/auth/verify-email?token=${encodedToken}`;
+  }
+
+  const clientBaseUrl = normalizeBaseUrl(process.env.CLIENT_URL, "http://localhost:5173");
+  return `${clientBaseUrl}/verify-email?token=${encodedToken}`;
+};
 const isValidFromField = (value) => {
   const plainEmailPattern = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
   const namedEmailPattern = /^.+<\s*[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+\s*>$/;
@@ -142,7 +156,7 @@ const sendMailWithRetry = async (mailOptions, retries = 3) => {
 };
 
 const sendVerificationEmail = async ({ to, username, token }) => {
-  const verificationLink = `${process.env.CLIENT_URL}/verify-email?token=${token}`;
+  const verificationLink = buildVerificationLink(token);
   return sendMailWithRetry({
     from: getSafeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM),
     to,
