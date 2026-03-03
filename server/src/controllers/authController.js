@@ -44,6 +44,42 @@ const createVerificationToken = async (userId) => {
   return token;
 };
 
+const normalizeBaseUrl = (value, fallback = "") => {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/\/+$/, "");
+  return normalized || fallback;
+};
+
+const getClientRedirectUrl = (status, message) => {
+  const clientBaseUrl = normalizeBaseUrl(process.env.CLIENT_URL, "http://localhost:5173");
+  const params = new URLSearchParams({ verified: status });
+  if (message) {
+    params.set("message", message);
+  }
+  return `${clientBaseUrl}/auth?${params.toString()}`;
+};
+
+const verifyUserEmailByToken = async (token) => {
+  if (!token) throw new AppError("Verification token is required.", 400);
+
+  const tokenDoc = await VerificationToken.findOne({ token });
+  if (!tokenDoc || tokenDoc.expiresAt < new Date()) {
+    throw new AppError("Invalid or expired verification token.", 400);
+  }
+
+  const user = await User.findById(tokenDoc.userId);
+  if (!user) {
+    throw new AppError("User not found.", 404);
+  }
+
+  user.verified = true;
+  await user.save();
+  await VerificationToken.deleteMany({ userId: user._id });
+
+  return "Email verified successfully. You can now log in.";
+};
+
 const queueVerificationEmail = async ({ to, username, token }) => {
   // eslint-disable-next-line no-console
   console.info(`Verification email queued for ${to}`);
@@ -101,23 +137,21 @@ const register = asyncHandler(async (req, res) => {
 
 const verifyEmail = asyncHandler(async (req, res) => {
   const token = req.body.token || req.query.token;
-  if (!token) throw new AppError("Verification token is required.", 400);
+  const message = await verifyUserEmailByToken(token);
+  res.json({ message });
+});
 
-  const tokenDoc = await VerificationToken.findOne({ token });
-  if (!tokenDoc || tokenDoc.expiresAt < new Date()) {
-    throw new AppError("Invalid or expired verification token.", 400);
+const verifyEmailRedirect = asyncHandler(async (req, res) => {
+  const token = req.query.token;
+
+  try {
+    const message = await verifyUserEmailByToken(token);
+    res.redirect(getClientRedirectUrl("success", message));
+  } catch (error) {
+    const fallback = "Verification failed.";
+    const message = error instanceof Error ? error.message : fallback;
+    res.redirect(getClientRedirectUrl("error", message || fallback));
   }
-
-  const user = await User.findById(tokenDoc.userId);
-  if (!user) {
-    throw new AppError("User not found.", 404);
-  }
-
-  user.verified = true;
-  await user.save();
-  await VerificationToken.deleteMany({ userId: user._id });
-
-  res.json({ message: "Email verified successfully. You can now log in." });
 });
 
 const login = asyncHandler(async (req, res) => {
@@ -198,6 +232,7 @@ const getMe = asyncHandler(async (req, res) => {
 module.exports = {
   register,
   verifyEmail,
+  verifyEmailRedirect,
   login,
   resendVerification,
   getMe,
