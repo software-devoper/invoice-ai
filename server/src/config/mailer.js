@@ -1,12 +1,21 @@
+const dns = require("dns");
 const nodemailer = require("nodemailer");
 
 let transporter;
+
+const forceIpv4Lookup = (hostname, options, callback) => {
+  const normalizedOptions = typeof options === "object" && options !== null ? options : {};
+  const normalizedCallback = typeof options === "function" ? options : callback;
+  return dns.lookup(hostname, { ...normalizedOptions, family: 4, all: false }, normalizedCallback);
+};
+
+const isTrue = (value) => String(value || "").trim().toLowerCase() === "true";
 
 const getMailerTransporter = async () => {
   if (transporter) return transporter;
 
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    transporter = nodemailer.createTransport({
+    const transportConfig = {
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT || 587),
       secure: String(process.env.SMTP_SECURE || "false") === "true",
@@ -17,7 +26,17 @@ const getMailerTransporter = async () => {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
-    });
+    };
+
+    if (isTrue(process.env.SMTP_FORCE_IPV4)) {
+      transportConfig.lookup = forceIpv4Lookup;
+      transportConfig.tls = {
+        ...(transportConfig.tls || {}),
+        servername: process.env.SMTP_HOST,
+      };
+    }
+
+    transporter = nodemailer.createTransport(transportConfig);
   } else {
     transporter = nodemailer.createTransport({ jsonTransport: true });
     // eslint-disable-next-line no-console
