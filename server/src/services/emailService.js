@@ -5,6 +5,13 @@ const { invoiceEmailTemplate, verificationEmailTemplate } = require("../utils/em
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getResendApiKey = () => String(process.env.RESEND_API_KEY || "").trim();
+const normalizeProvider = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "resend" || normalized === "smtp") return normalized;
+  return "";
+};
 const normalizeFrom = (value, fallback = "") => {
   const normalized = String(value || "")
     .trim()
@@ -40,9 +47,7 @@ const getSafeFrom = (value) => {
 };
 
 const getConfiguredProvider = () => {
-  const explicitProvider = String(process.env.EMAIL_PROVIDER || "")
-    .trim()
-    .toLowerCase();
+  const explicitProvider = normalizeProvider(process.env.EMAIL_PROVIDER);
 
   if (explicitProvider === "resend") return "resend";
   if (explicitProvider === "smtp") return "smtp";
@@ -54,9 +59,27 @@ const getConfiguredProvider = () => {
   return getResendApiKey().length > 0 ? "resend" : "smtp";
 };
 
+const getProviderForEmailType = (emailType) => {
+  const scopedKeyMap = {
+    verification: "EMAIL_PROVIDER_VERIFICATION",
+    invoice: "EMAIL_PROVIDER_INVOICE",
+  };
+  const scopedProvider = normalizeProvider(process.env[scopedKeyMap[emailType]]);
+  if (scopedProvider) return scopedProvider;
+  return getConfiguredProvider();
+};
+
 const assertProviderConfig = (provider) => {
   if (provider === "resend" && getResendApiKey().length === 0) {
     throw new Error("EMAIL_PROVIDER is 'resend' but RESEND_API_KEY is missing.");
+  }
+  if (
+    provider === "smtp" &&
+    (!String(process.env.SMTP_HOST || "").trim() ||
+      !String(process.env.SMTP_USER || "").trim() ||
+      !String(process.env.SMTP_PASS || "").trim())
+  ) {
+    throw new Error("SMTP provider selected but SMTP_HOST/SMTP_USER/SMTP_PASS is missing.");
   }
 };
 
@@ -126,11 +149,12 @@ const sendWithResend = async (mailOptions) => {
   return response.json();
 };
 
-const sendMailWithRetry = async (mailOptions, retries = 3) => {
-  const provider = getConfiguredProvider();
+const sendMailWithRetry = async (mailOptions, retries = 3, options = {}) => {
+  const provider = normalizeProvider(options.provider) || getConfiguredProvider();
+  const emailType = String(options.emailType || "general");
   assertProviderConfig(provider);
   // eslint-disable-next-line no-console
-  console.info(`Email provider selected: ${provider}`);
+  console.info(`Email provider selected for ${emailType}: ${provider}`);
 
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
@@ -157,16 +181,18 @@ const sendMailWithRetry = async (mailOptions, retries = 3) => {
 
 const sendVerificationEmail = async ({ to, username, token }) => {
   const verificationLink = buildVerificationLink(token);
+  const provider = getProviderForEmailType("verification");
   return sendMailWithRetry({
     from: getSafeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM),
     to,
     subject: "Verify your Invoice SaaS account",
     html: verificationEmailTemplate({ username, verificationLink }),
-  });
+  }, 3, { provider, emailType: "verification" });
 };
 
-const sendInvoiceEmail = async ({ to, customerName, companyName, invoiceNumber, pdfFilePath }) =>
-  sendMailWithRetry(
+const sendInvoiceEmail = async ({ to, customerName, companyName, invoiceNumber, pdfFilePath }) => {
+  const provider = getProviderForEmailType("invoice");
+  return sendMailWithRetry(
     {
       from: getSafeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM),
       to,
@@ -179,8 +205,10 @@ const sendInvoiceEmail = async ({ to, customerName, companyName, invoiceNumber, 
         },
       ],
     },
-    3
+    3,
+    { provider, emailType: "invoice" }
   );
+};
 
 module.exports = {
   sendMailWithRetry,
