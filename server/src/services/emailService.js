@@ -5,6 +5,7 @@ const { invoiceEmailTemplate, verificationEmailTemplate } = require("../utils/em
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getResendApiKey = () => String(process.env.RESEND_API_KEY || "").trim();
+const SMTP_PROVIDER_KEYS = ["brevo", "sendgrid", "mailgun", "gmail"];
 const normalizeProvider = (value) => {
   const normalized = String(value || "")
     .trim()
@@ -45,18 +46,35 @@ const getSafeFrom = (value) => {
   console.warn(`Invalid from field "${normalized}", falling back to ${fallback}`);
   return fallback;
 };
+const getSafeSmtpFrom = (value) => {
+  const fallback = "no-reply@example.com";
+  const normalized = normalizeFrom(value, fallback);
+  if (isValidFromField(normalized)) return normalized;
+  // eslint-disable-next-line no-console
+  console.warn(`Invalid SMTP from field "${normalized}", falling back to ${fallback}`);
+  return fallback;
+};
+const getConfiguredSmtpProvider = () =>
+  String(process.env.SMTP_PROVIDER || "")
+    .trim()
+    .toLowerCase();
+const hasSmtpHostConfig = () => Boolean(String(process.env.SMTP_HOST || "").trim());
+const hasSupportedSmtpProvider = () => SMTP_PROVIDER_KEYS.includes(getConfiguredSmtpProvider());
+const getFromForProvider = (provider) => {
+  if (provider === "resend") {
+    return getSafeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM);
+  }
+  return getSafeSmtpFrom(process.env.SMTP_FROM || process.env.RESEND_FROM);
+};
 
 const getConfiguredProvider = () => {
   const explicitProvider = normalizeProvider(process.env.EMAIL_PROVIDER);
 
   if (explicitProvider === "resend") return "resend";
   if (explicitProvider === "smtp") return "smtp";
-
-  if (String(process.env.NODE_ENV || "").toLowerCase() === "production") {
-    return "resend";
-  }
-
-  return getResendApiKey().length > 0 ? "resend" : "smtp";
+  if (hasSmtpHostConfig() || hasSupportedSmtpProvider()) return "smtp";
+  if (getResendApiKey().length > 0) return "resend";
+  return "smtp";
 };
 
 const getProviderForEmailType = (emailType) => {
@@ -75,11 +93,13 @@ const assertProviderConfig = (provider) => {
   }
   if (
     provider === "smtp" &&
-    (!String(process.env.SMTP_HOST || "").trim() ||
+    ((!hasSmtpHostConfig() && !hasSupportedSmtpProvider()) ||
       !String(process.env.SMTP_USER || "").trim() ||
       !String(process.env.SMTP_PASS || "").trim())
   ) {
-    throw new Error("SMTP provider selected but SMTP_HOST/SMTP_USER/SMTP_PASS is missing.");
+    throw new Error(
+      "SMTP provider selected but config is incomplete. Set SMTP_PROVIDER (brevo/sendgrid/mailgun/gmail) or SMTP_HOST, and also SMTP_USER + SMTP_PASS."
+    );
   }
 };
 
@@ -183,7 +203,7 @@ const sendVerificationEmail = async ({ to, username, token }) => {
   const verificationLink = buildVerificationLink(token);
   const provider = getProviderForEmailType("verification");
   return sendMailWithRetry({
-    from: getSafeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM),
+    from: getFromForProvider(provider),
     to,
     subject: "Verify your Invoice SaaS account",
     html: verificationEmailTemplate({ username, verificationLink }),
@@ -194,7 +214,7 @@ const sendInvoiceEmail = async ({ to, customerName, companyName, invoiceNumber, 
   const provider = getProviderForEmailType("invoice");
   return sendMailWithRetry(
     {
-      from: getSafeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM),
+      from: getFromForProvider(provider),
       to,
       subject: `Invoice ${invoiceNumber}`,
       html: invoiceEmailTemplate({ customerName, companyName, invoiceNumber }),
