@@ -78,24 +78,37 @@ app.get("/", (_req, res) => {
 });
 
 app.get("/health", (_req, res) => {
-  const explicitProvider = String(process.env.EMAIL_PROVIDER || "")
-    .trim()
-    .toLowerCase();
+  const normalizeProvider = (value) => {
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase();
+    return normalized === "smtp" || normalized === "resend" ? normalized : "";
+  };
+  const explicitProvider = normalizeProvider(process.env.EMAIL_PROVIDER);
+  const explicitVerificationProvider = normalizeProvider(process.env.EMAIL_PROVIDER_VERIFICATION);
+  const explicitInvoiceProvider = normalizeProvider(process.env.EMAIL_PROVIDER_INVOICE);
   const resendKeyPresent = Boolean(String(process.env.RESEND_API_KEY || "").trim());
-  const emailProvider =
-    explicitProvider === "resend" || explicitProvider === "smtp"
-      ? explicitProvider
-      : String(process.env.NODE_ENV || "").toLowerCase() === "production"
-      ? "resend"
-      : resendKeyPresent
-      ? "resend"
-      : "smtp";
+  const smtpProviderPresent = Boolean(String(process.env.SMTP_PROVIDER || "").trim());
+  const smtpHostPresent = Boolean(String(process.env.SMTP_HOST || "").trim());
+  const emailProvider = explicitProvider
+    ? explicitProvider
+    : smtpHostPresent || smtpProviderPresent
+    ? "smtp"
+    : resendKeyPresent
+    ? "resend"
+    : "smtp";
+  const verificationProvider = explicitVerificationProvider || emailProvider;
+  const invoiceProvider = explicitInvoiceProvider || emailProvider;
 
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
-    emailProvider,
+    emailProviderDefault: emailProvider,
+    verificationProvider,
+    invoiceProvider,
     resendKeyPresent,
+    smtpHostPresent,
+    smtpProviderPresent,
   });
 });
 
