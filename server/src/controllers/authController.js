@@ -57,7 +57,7 @@ const getClientRedirectUrl = (status, message) => {
   if (message) {
     params.set("message", message);
   }
-  return `${clientBaseUrl}/auth?${params.toString()}`;
+  return `${clientBaseUrl}/?${params.toString()}`;
 };
 
 const verifyUserEmailByToken = async (token) => {
