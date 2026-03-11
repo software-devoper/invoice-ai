@@ -5,12 +5,13 @@ const { invoiceEmailTemplate, verificationEmailTemplate } = require("../utils/em
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getResendApiKey = () => String(process.env.RESEND_API_KEY || "").trim();
+const getBrevoApiKey = () => String(process.env.BREVO_API_KEY || "").trim();
 const SMTP_PROVIDER_KEYS = ["brevo", "sendgrid", "mailgun", "gmail"];
 const normalizeProvider = (value) => {
   const normalized = String(value || "")
     .trim()
     .toLowerCase();
-  if (normalized === "resend" || normalized === "smtp") return normalized;
+  if (normalized === "resend" || normalized === "smtp" || normalized === "brevo") return normalized;
   return "";
 };
 const normalizeFrom = (value, fallback = "") => {
@@ -38,6 +39,18 @@ const isValidFromField = (value) => {
   const namedEmailPattern = /^.+<\s*[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+\s*>$/;
   return plainEmailPattern.test(value) || namedEmailPattern.test(value);
 };
+const parseFromField = (value) => {
+  const raw = String(value || "").trim().replace(/^['"]|['"]$/g, "");
+  if (!raw) return { email: "", name: "" };
+  const match = raw.match(/^([^<]+)<\s*([^>]+)\s*>$/);
+  if (match) {
+    return { name: match[1].trim(), email: match[2].trim() };
+  }
+  if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(raw)) {
+    return { name: "", email: raw };
+  }
+  return { email: "", name: raw };
+};
 const getSafeFrom = (value) => {
   const fallback = "onboarding@resend.dev";
   const normalized = normalizeFrom(value, fallback);
@@ -64,6 +77,9 @@ const getFromForProvider = (provider) => {
   if (provider === "resend") {
     return getSafeFrom(process.env.RESEND_FROM || process.env.SMTP_FROM);
   }
+  if (provider === "brevo") {
+    return getSafeSmtpFrom(process.env.BREVO_SENDER_EMAIL || process.env.SMTP_FROM || process.env.RESEND_FROM);
+  }
   return getSafeSmtpFrom(process.env.SMTP_FROM || process.env.RESEND_FROM);
 };
 
@@ -71,6 +87,7 @@ const getConfiguredProvider = () => {
   const explicitProvider = normalizeProvider(process.env.EMAIL_PROVIDER);
 
   if (explicitProvider === "resend") return "resend";
+  if (explicitProvider === "brevo") return "brevo";
   if (explicitProvider === "smtp") return "smtp";
   if (hasSmtpHostConfig() || hasSupportedSmtpProvider()) return "smtp";
   if (getResendApiKey().length > 0) return "resend";
@@ -91,6 +108,9 @@ const assertProviderConfig = (provider) => {
   if (provider === "resend" && getResendApiKey().length === 0) {
     throw new Error("EMAIL_PROVIDER is 'resend' but RESEND_API_KEY is missing.");
   }
+  if (provider === "brevo" && getBrevoApiKey().length === 0) {
+    throw new Error("EMAIL_PROVIDER is 'brevo' but BREVO_API_KEY is missing.");
+  }
   if (
     provider === "smtp" &&
     ((!hasSmtpHostConfig() && !hasSupportedSmtpProvider()) ||
@@ -104,6 +124,19 @@ const assertProviderConfig = (provider) => {
 };
 
 const toArray = (value) => (Array.isArray(value) ? value : [value].filter(Boolean));
+const normalizeBrevoRecipients = (value) =>
+  toArray(value)
+    .map((entry) => {
+      if (!entry) return null;
+      if (typeof entry === "string") {
+        return { email: entry };
+      }
+      if (typeof entry === "object" && entry.email) {
+        return { email: entry.email, name: entry.name };
+      }
+      return null;
+    })
+    .filter(Boolean);
 
 const buildResendAttachments = (attachments = []) =>
   attachments
@@ -131,6 +164,29 @@ const buildResendAttachments = (attachments = []) =>
             content: fs.readFileSync(attachment.path).toString("base64"),
           };
         }
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+
+const buildBrevoAttachments = (attachments = []) =>
+  attachments
+    .map((attachment) => {
+      if (!attachment) return null;
+
+      if (attachment.content && attachment.filename) {
+        return {
+          name: attachment.filename,
+          content: attachment.content,
+        };
+      }
+
+      if (attachment.path && attachment.filename && fs.existsSync(attachment.path)) {
+        return {
+          name: attachment.filename,
+          content: fs.readFileSync(attachment.path).toString("base64"),
+        };
       }
 
       return null;
@@ -169,6 +225,79 @@ const sendWithResend = async (mailOptions) => {
   return response.json();
 };
 
+const getBrevoSender = (mailOptions) => {
+  const fromValue =
+    mailOptions.from ||
+    process.env.BREVO_SENDER_EMAIL ||
+    process.env.SMTP_FROM ||
+    process.env.RESEND_FROM ||
+    "";
+  const parsed = parseFromField(fromValue);
+  const senderEmail = String(process.env.BREVO_SENDER_EMAIL || parsed.email || "").trim();
+  const senderName = String(process.env.BREVO_SENDER_NAME || parsed.name || "Invoice Team").trim();
+
+  if (!senderEmail) {
+    throw new Error("Brevo sender email is missing. Set BREVO_SENDER_EMAIL or SMTP_FROM.");
+  }
+
+  return {
+    email: senderEmail,
+    name: senderName,
+  };
+};
+
+const buildBrevoReplyTo = (mailOptions) => {
+  const replyValue = mailOptions.replyTo || process.env.BREVO_REPLY_TO || "";
+  if (!replyValue) return null;
+  const parsed = parseFromField(replyValue);
+  if (!parsed.email) return null;
+  return parsed.name ? { email: parsed.email, name: parsed.name } : { email: parsed.email };
+};
+
+const sendWithBrevo = async (mailOptions) => {
+  const payload = {
+    sender: getBrevoSender(mailOptions),
+    to: normalizeBrevoRecipients(mailOptions.to),
+    subject: mailOptions.subject,
+    htmlContent: mailOptions.html,
+  };
+
+  if (!payload.to.length) {
+    throw new Error("Brevo requires at least one recipient.");
+  }
+
+  if (mailOptions.text) {
+    payload.textContent = mailOptions.text;
+  }
+
+  const replyTo = buildBrevoReplyTo(mailOptions);
+  if (replyTo) {
+    payload.replyTo = replyTo;
+  }
+
+  const attachments = buildBrevoAttachments(mailOptions.attachments);
+  if (attachments.length > 0) {
+    payload.attachment = attachments;
+  }
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": getBrevoApiKey(),
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Brevo API error ${response.status}: ${errorBody}`);
+  }
+
+  return response.json();
+};
+
 const sendMailWithRetry = async (mailOptions, retries = 3, options = {}) => {
   const provider = normalizeProvider(options.provider) || getConfiguredProvider();
   const emailType = String(options.emailType || "general");
@@ -182,6 +311,8 @@ const sendMailWithRetry = async (mailOptions, retries = 3, options = {}) => {
       let info;
       if (provider === "resend") {
         info = await sendWithResend(mailOptions);
+      } else if (provider === "brevo") {
+        info = await sendWithBrevo(mailOptions);
       } else {
         const transporter = await getMailerTransporter();
         info = await transporter.sendMail(mailOptions);
