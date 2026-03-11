@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AuthPage from "./pages/AuthPage";
@@ -10,10 +10,12 @@ import { useAuth } from "./hooks/useAuth";
 
 const App = () => {
   const { token } = useAuth();
+  const location = useLocation();
+  const search = location.search;
 
   return (
     <Routes>
-      <Route path="/" element={<Navigate to={token ? "/upload" : "/auth"} replace />} />
+      <Route path="/" element={<Navigate to={token ? "/upload" : `/auth${search}`} replace />} />
       <Route path="/auth" element={<AuthPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
 
@@ -35,4 +37,3 @@ const App = () => {
 };
 
 export default App;
-
