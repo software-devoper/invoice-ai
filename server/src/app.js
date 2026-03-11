@@ -82,18 +82,21 @@ app.get("/health", (_req, res) => {
     const normalized = String(value || "")
       .trim()
       .toLowerCase();
-    return normalized === "smtp" || normalized === "resend" ? normalized : "";
+    return normalized === "smtp" || normalized === "resend" || normalized === "brevo" ? normalized : "";
   };
   const explicitProvider = normalizeProvider(process.env.EMAIL_PROVIDER);
   const explicitVerificationProvider = normalizeProvider(process.env.EMAIL_PROVIDER_VERIFICATION);
   const explicitInvoiceProvider = normalizeProvider(process.env.EMAIL_PROVIDER_INVOICE);
   const resendKeyPresent = Boolean(String(process.env.RESEND_API_KEY || "").trim());
+  const brevoKeyPresent = Boolean(String(process.env.BREVO_API_KEY || "").trim());
   const smtpProviderPresent = Boolean(String(process.env.SMTP_PROVIDER || "").trim());
   const smtpHostPresent = Boolean(String(process.env.SMTP_HOST || "").trim());
   const emailProvider = explicitProvider
     ? explicitProvider
     : smtpHostPresent || smtpProviderPresent
     ? "smtp"
+    : brevoKeyPresent
+    ? "brevo"
     : resendKeyPresent
     ? "resend"
     : "smtp";
@@ -106,6 +109,7 @@ app.get("/health", (_req, res) => {
     emailProviderDefault: emailProvider,
     verificationProvider,
     invoiceProvider,
+    brevoKeyPresent,
     resendKeyPresent,
     smtpHostPresent,
     smtpProviderPresent,
